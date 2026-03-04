@@ -253,7 +253,7 @@ const submitComment = async (parentCommentId) => {
       content: text,
       parentComment: parentCommentId,
     })
-    comments.value.unshift(data.comment)
+    comments.value.push(data.comment)
 
     if (isReply) {
       replyText.value = ''
