@@ -79,23 +79,39 @@
             <!-- Top-level comment -->
             <div class="border-bottom pb-2">
               <div class="d-flex justify-content-between align-items-start">
-                <div>
+                <div class="flex-grow-1">
                   <strong class="me-2">
                     <i class="bi bi-person-circle me-1"></i>{{ comment.author?.username }}
                   </strong>
                   <small class="text-muted">{{ formatDate(comment.createdAt) }}</small>
-                  <p class="mb-1 mt-1">{{ comment.content }}</p>
+                  <p class="mb-2 mt-1">{{ comment.content }}</p>
 
-                  <!-- Reply button -->
-                  <button
-                    v-if="isLoggedIn"
-                    class="btn btn-link btn-sm p-0 text-primary"
-                    style="font-size: 0.8rem;"
-                    @click="toggleReply(comment._id)"
-                  >
-                    <i class="bi bi-reply me-1"></i>
-                    {{ replyingTo === comment._id ? 'Cancel' : 'Reply' }}
-                  </button>
+                  <!-- Action buttons row -->
+                  <div class="d-flex align-items-center gap-3">
+                    <!-- Reply button -->
+                    <button
+                      v-if="isLoggedIn"
+                      class="btn btn-link btn-sm p-0 text-primary"
+                      style="font-size: 0.8rem;"
+                      @click="toggleReply(comment._id)"
+                    >
+                      <i class="bi bi-reply me-1"></i>
+                      {{ replyingTo === comment._id ? 'Cancel' : 'Reply' }}
+                    </button>
+
+                    <!-- Show/Hide replies button -->
+                    <button
+                      v-if="getReplies(comment._id).length > 0"
+                      class="btn btn-link btn-sm p-0 text-muted"
+                      style="font-size: 0.8rem;"
+                      @click="toggleReplies(comment._id)"
+                    >
+                      <i :class="visibleReplies[comment._id] ? 'bi bi-chevron-up' : 'bi bi-chevron-down'" class="me-1"></i>
+                      {{ visibleReplies[comment._id] ? 'Hide' : 'Show' }}
+                      {{ getReplies(comment._id).length }}
+                      {{ getReplies(comment._id).length === 1 ? 'reply' : 'replies' }}
+                    </button>
+                  </div>
                 </div>
 
                 <!-- Delete comment -->
@@ -144,9 +160,9 @@
               </div>
             </div>
 
-            <!-- Nested replies -->
+            <!-- Nested replies (shown/hidden by toggle) -->
             <div
-              v-if="getReplies(comment._id).length > 0"
+              v-if="visibleReplies[comment._id] && getReplies(comment._id).length > 0"
               class="ms-4 mt-1"
               style="border-left: 2px solid #dee2e6; padding-left: 1rem;"
             >
@@ -202,17 +218,31 @@ const comments = ref([])
 const loading = ref(true)
 const newComment = ref('')
 const replyText = ref('')
-const replyingTo = ref(null)      // stores the comment._id being replied to
+const replyingTo = ref(null)
 const commentLoading = ref(false)
 const replyLoading = ref(false)
 const commentError = ref('')
+
+// Tracks which comment's replies are visible
+// e.g. { 'abc123': true, 'def456': false }
+const visibleReplies = ref({})
+
+// Toggle show/hide replies
+const toggleReplies = (commentId) => {
+  visibleReplies.value[commentId] = !visibleReplies.value[commentId]
+}
 
 // Separate top-level comments from replies
 const topLevelComments = computed(() =>
   comments.value.filter(c => !c.parentComment)
 )
+
+// Fixed comparison - handles both string ID and populated object
 const getReplies = (commentId) =>
-  comments.value.filter(c => c.parentComment === commentId)
+  comments.value.filter(c =>
+    c.parentComment === commentId ||
+    c.parentComment?._id === commentId
+  )
 
 const isAuthor = computed(() => post.value?.author?._id === currentUser.value?._id)
 
@@ -253,11 +283,13 @@ const submitComment = async (parentCommentId) => {
       content: text,
       parentComment: parentCommentId,
     })
-    comments.value.push(data.comment)
+    comments.value.push(data.comment) // push = adds to bottom
 
     if (isReply) {
       replyText.value = ''
       replyingTo.value = null
+      // Auto show replies after posting one
+      visibleReplies.value[parentCommentId] = true
     } else {
       newComment.value = ''
     }
@@ -273,7 +305,12 @@ const deleteComment = async (id) => {
   if (!confirm('Delete this comment?')) return
   try {
     await api.delete(`/comments/${id}`)
-    comments.value = comments.value.filter(c => c._id !== id)
+    // Remove comment and its replies from the list
+    comments.value = comments.value.filter(c =>
+      c._id !== id &&
+      c.parentComment !== id &&
+      c.parentComment?._id !== id
+    )
   } catch (err) {
     alert(err.response?.data?.message || 'Failed to delete comment')
   }
