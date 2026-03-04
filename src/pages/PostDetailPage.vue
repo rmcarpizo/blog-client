@@ -36,10 +36,10 @@
       <div class="card">
         <div class="card-body p-4">
           <h5 class="fw-bold mb-4">
-            <i class="bi bi-chat-dots me-2"></i>Comments ({{ comments.length }})
+            <i class="bi bi-chat-dots me-2"></i>Comments ({{ topLevelComments.length }})
           </h5>
 
-          <!-- Add comment -->
+          <!-- Add top-level comment -->
           <div v-if="isLoggedIn" class="mb-4">
             <textarea
               v-model="newComment"
@@ -52,7 +52,7 @@
               <small class="text-muted">{{ newComment.length }}/500</small>
               <button
                 class="btn btn-primary btn-sm"
-                @click="addComment"
+                @click="submitComment(null)"
                 :disabled="commentLoading || !newComment.trim()"
               >
                 <span v-if="commentLoading" class="spinner-border spinner-border-sm me-1"></span>
@@ -65,25 +65,118 @@
             <RouterLink to="/login">Login</RouterLink> to leave a comment
           </div>
 
-          <!-- Comments list -->
-          <div v-if="comments.length === 0" class="text-muted text-center py-3">
+          <!-- Empty state -->
+          <div v-if="topLevelComments.length === 0" class="text-muted text-center py-3">
             No comments yet. Be the first!
           </div>
-          <div v-for="comment in comments" :key="comment._id" class="border-bottom pb-3 mb-3">
-            <div class="d-flex justify-content-between align-items-start">
-              <div>
-                <strong class="me-2"><i class="bi bi-person-circle me-1"></i>{{ comment.author?.username }}</strong>
-                <small class="text-muted">{{ formatDate(comment.createdAt) }}</small>
-                <p class="mb-0 mt-1">{{ comment.content }}</p>
+
+          <!-- Comments list -->
+          <div
+            v-for="comment in topLevelComments"
+            :key="comment._id"
+            class="mb-3"
+          >
+            <!-- Top-level comment -->
+            <div class="border-bottom pb-2">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <strong class="me-2">
+                    <i class="bi bi-person-circle me-1"></i>{{ comment.author?.username }}
+                  </strong>
+                  <small class="text-muted">{{ formatDate(comment.createdAt) }}</small>
+                  <p class="mb-1 mt-1">{{ comment.content }}</p>
+
+                  <!-- Reply button -->
+                  <button
+                    v-if="isLoggedIn"
+                    class="btn btn-link btn-sm p-0 text-primary"
+                    style="font-size: 0.8rem;"
+                    @click="toggleReply(comment._id)"
+                  >
+                    <i class="bi bi-reply me-1"></i>
+                    {{ replyingTo === comment._id ? 'Cancel' : 'Reply' }}
+                  </button>
+                </div>
+
+                <!-- Delete comment -->
+                <button
+                  v-if="isAdmin || comment.author?._id === currentUser?._id"
+                  class="btn btn-sm btn-link text-danger p-0 ms-2"
+                  @click="deleteComment(comment._id)"
+                >
+                  <i class="bi bi-x-lg"></i>
+                </button>
               </div>
-              <button
-                v-if="isAdmin || comment.author?._id === currentUser?._id"
-                class="btn btn-sm btn-link text-danger p-0 ms-2"
-                @click="deleteComment(comment._id)"
-              >
-                <i class="bi bi-x-lg"></i>
-              </button>
             </div>
+
+            <!-- Reply input box -->
+            <div
+              v-if="replyingTo === comment._id"
+              class="ms-4 mt-2 mb-2 p-3 rounded"
+              style="background: #f8f9fa; border-left: 3px solid #0d6efd;"
+            >
+              <small class="text-muted d-block mb-2">
+                <i class="bi bi-reply-fill text-primary me-1"></i>
+                Replying to <strong>{{ comment.author?.username }}</strong>
+              </small>
+              <textarea
+                v-model="replyText"
+                class="form-control form-control-sm mb-2"
+                rows="2"
+                placeholder="Write a reply..."
+                maxlength="500"
+              ></textarea>
+              <div class="d-flex justify-content-between align-items-center">
+                <small class="text-muted">{{ replyText.length }}/500</small>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-sm btn-outline-secondary" @click="cancelReply">
+                    Cancel
+                  </button>
+                  <button
+                    class="btn btn-sm btn-primary"
+                    @click="submitComment(comment._id)"
+                    :disabled="replyLoading || !replyText.trim()"
+                  >
+                    <span v-if="replyLoading" class="spinner-border spinner-border-sm me-1"></span>
+                    Post Reply
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Nested replies -->
+            <div
+              v-if="getReplies(comment._id).length > 0"
+              class="ms-4 mt-1"
+              style="border-left: 2px solid #dee2e6; padding-left: 1rem;"
+            >
+              <div
+                v-for="reply in getReplies(comment._id)"
+                :key="reply._id"
+                class="border-bottom pb-2 pt-2"
+              >
+                <div class="d-flex justify-content-between align-items-start">
+                  <div>
+                    <strong class="me-2">
+                      <i class="bi bi-person-circle me-1"></i>{{ reply.author?.username }}
+                    </strong>
+                    <span class="badge bg-primary bg-opacity-10 text-primary me-1" style="font-size: 0.65rem;">
+                      <i class="bi bi-reply me-1"></i>reply
+                    </span>
+                    <small class="text-muted">{{ formatDate(reply.createdAt) }}</small>
+                    <p class="mb-0 mt-1">{{ reply.content }}</p>
+                  </div>
+                  <button
+                    v-if="isAdmin || reply.author?._id === currentUser?._id"
+                    class="btn btn-sm btn-link text-danger p-0 ms-2"
+                    @click="deleteComment(reply._id)"
+                  >
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -108,8 +201,18 @@ const post = ref(null)
 const comments = ref([])
 const loading = ref(true)
 const newComment = ref('')
+const replyText = ref('')
+const replyingTo = ref(null)      // stores the comment._id being replied to
 const commentLoading = ref(false)
+const replyLoading = ref(false)
 const commentError = ref('')
+
+// Separate top-level comments from replies
+const topLevelComments = computed(() =>
+  comments.value.filter(c => !c.parentComment)
+)
+const getReplies = (commentId) =>
+  comments.value.filter(c => c.parentComment === commentId)
 
 const isAuthor = computed(() => post.value?.author?._id === currentUser.value?._id)
 
@@ -117,36 +220,52 @@ const formatDate = (d) => new Date(d).toLocaleDateString('en-US', {
   month: 'short', day: 'numeric', year: 'numeric'
 })
 
-const fetchPost = async () => {
-  try {
-    const { data } = await api.get(`/posts/${route.params.id}`)
-    post.value = data.post
-  } catch {
-    post.value = null
-  } finally {
-    loading.value = false
+// Toggle reply box open/close
+const toggleReply = (commentId) => {
+  if (replyingTo.value === commentId) {
+    cancelReply()
+  } else {
+    replyingTo.value = commentId
+    replyText.value = ''
   }
 }
 
-const fetchComments = async () => {
-  try {
-    const { data } = await api.get(`/comments/post/${route.params.id}`)
-    comments.value = data.comments
-  } catch {}
+const cancelReply = () => {
+  replyingTo.value = null
+  replyText.value = ''
 }
 
-const addComment = async () => {
-  if (!newComment.value.trim()) return
-  commentLoading.value = true
+// Submit comment OR reply
+// parentCommentId = null → top-level comment
+// parentCommentId = comment._id → reply
+const submitComment = async (parentCommentId) => {
+  const isReply = parentCommentId !== null
+  const text = isReply ? replyText.value : newComment.value
+
+  if (!text.trim()) return
+
+  if (isReply) replyLoading.value = true
+  else commentLoading.value = true
   commentError.value = ''
+
   try {
-    const { data } = await api.post(`/comments/${route.params.id}`, { content: newComment.value })
+    const { data } = await api.post(`/comments/${route.params.id}`, {
+      content: text,
+      parentComment: parentCommentId,
+    })
     comments.value.unshift(data.comment)
-    newComment.value = ''
+
+    if (isReply) {
+      replyText.value = ''
+      replyingTo.value = null
+    } else {
+      newComment.value = ''
+    }
   } catch (err) {
     commentError.value = err.response?.data?.message || 'Failed to post comment'
   } finally {
     commentLoading.value = false
+    replyLoading.value = false
   }
 }
 
@@ -168,6 +287,24 @@ const deletePost = async () => {
   } catch (err) {
     alert(err.response?.data?.message || 'Failed to delete post')
   }
+}
+
+const fetchPost = async () => {
+  try {
+    const { data } = await api.get(`/posts/${route.params.id}`)
+    post.value = data.post
+  } catch {
+    post.value = null
+  } finally {
+    loading.value = false
+  }
+}
+
+const fetchComments = async () => {
+  try {
+    const { data } = await api.get(`/comments/post/${route.params.id}`)
+    comments.value = data.comments
+  } catch {}
 }
 
 onMounted(async () => {
