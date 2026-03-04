@@ -239,10 +239,12 @@ const topLevelComments = computed(() =>
 
 // Fixed comparison - handles both string ID and populated object
 const getReplies = (commentId) =>
-  comments.value.filter(c =>
-    c.parentComment === commentId ||
-    c.parentComment?._id === commentId
-  )
+    comments.value.filter(c => {
+    const parent = c.parentComment
+    if (!parent) return false
+    const parentId = typeof parent === 'object' ? parent._id?.toString() : parent?.toString()
+    return parentId === commentId?.toString()
+  })
 
 const isAuthor = computed(() => post.value?.author?._id === currentUser.value?._id)
 
