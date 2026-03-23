@@ -2,7 +2,7 @@
   <div class="row justify-content-center">
     <div class="col-md-8">
       <div class="card p-4">
-        <h3 class="fw-bold mb-5"><i class="bi bi-pencil-square me-2 text-primary"></i>Write a New Post</h3>
+        <h3 class="fw-bold mb-4"><i class="bi bi-pencil-square me-2 text-primary"></i>Write a New Post</h3>
 
         <div v-if="serverError" class="alert alert-danger">{{ serverError }}</div>
 
